@@ -1,0 +1,149 @@
+$MOD167
+$SEGMENTED
+newdist EQU 07A00h
+
+resptype EQU 07AC0h
+orgdistadr EQU 07AC2h
+orgdistseg EQU 07AC4h
+recbufptr EQU 07AC6h
+reclen EQU 07AC8h
+setupcomplete EQU 07ACAh
+
+; Registers that can be clobbered without saving on stack:
+; [R4, R5, R13, R14, R15]. R12 has sbuf ptr, can't touch it.
+RamHandlerCode SECTION CODE 'NCODE'
+RamHandlerProc PROC FAR
+	;For simulator - disable watchdog and set sendbuffer to 0xE000
+	;DISWDT
+	;MOV R12, #0E000h
+	
+	EXTS #038h, #1
+	MOV R15, setupcomplete	
+	JMPR cc_Z, validhandler
+
+handlersetup:
+	; Handler not valid yet, first call, need to copy distributor table
+	EXTS #038h, #2
+	MOV R14, orgdistadr
+	MOV R15, orgdistseg	
+	
+	MOV R13, #newdist
+
+	; Do not overwrite the first entry (SNS)
+	ADD R14, #4
+	ADD R13, #4
+
+tablecopyloop:
+	EXTP R15, #2
+	MOV R4, [R14+]
+	MOV R5, [R14+]
+	CMPB RH5, #0
+	JMPR cc_NZ finishedcopy
+	EXTS #038h, #3
+	MOV [R13], R4
+	ADD R13, #2
+	MOV [R13], R5
+	ADD R13, #2
+	JMPR cc_UC, tablecopyloop
+	
+finishedcopy:
+	EXTS #038h, #1
+	MOV setupcomplete, ZEROS
+	
+	; Call our handler if service is $BE
+validhandler:
+	EXTS #038h, #1
+	MOV R13, recbufptr
+	MOV R13, [R13]
+	MOVB RL4, [R13]
+	CMPB RL4, #0BEh
+	JMPR cc_Z handlercode
+	
+	; Call original SNS routine in other case
+originalroutine:
+	EXTS #038h, #2
+	MOV R4, orgdistseg
+	MOV R5, orgdistadr
+	EXTP R4, #2
+	MOV R4, [R5+]
+	MOV R5, [R5]
+	PUSH R5
+	PUSH R4
+	RETS
+	
+handlercode:
+	; Check if we have a valid ram read request
+	EXTS #038h, #1
+	MOV R5, reclen
+	MOVB RL5, [R5]
+	CMPB RL5, #03h
+	JMPR cc_Z, readmem
+wrongargs:
+	EXTS #038h, #1
+	MOV R4, resptype
+	MOV R5, [R4]
+	AND R5, #0F7FFh
+	MOV [R4], R5
+	
+	MOVB RL5, #07Fh
+	MOVB [R12], RL5
+	MOVB RL5, #0BEh
+	MOVB [R12+#1], RL5
+	MOVB RL5, #013h
+	MOVB [R12+#2], RL5
+	
+	MOV R4, #3
+	RETS
+
+; R12 = send buffer
+; R13 = receive buffer
+; R4 = bytes written to send buffer
+; R5, R14, R15 are available
+
+readmem:
+	; Load the fast array address into R15
+	MOVB RH5, [R13+#1]
+	MOVB RL5, [R13+#2]
+	MOV R15, R5
+	MOV R13, R12
+	ADD R13, #1
+	; R12 initial send buffer, R13 = current sendbuffer ptr, R15 = array address
+	; R14, R4, R5 = free
+	
+fastarrayloop:
+	; Read fastentry
+	EXTS #038h, #1
+	MOVB RH4, [R15+]
+	; Break if 0 length
+	JMPR cc_Z, fastcopyfinished	
+	EXTS #038h, #3
+	MOVB RL4, [R15+]
+	MOVB RH5, [R15+]
+	MOVB RL5, [R15+]
+	MOVBZ R14, RL4
+
+fastentryloop:
+	EXTS R14, #1
+	MOVB RL4, [R5+]
+	MOV [R13], RL4
+	ADD R13, #1
+	SUB RH4, #1
+	JMPR cc_NZ, fastentryloop
+	JMPR cc_UC, fastarrayloop
+	
+fastcopyfinished:
+	MOV RL5, #0FEh
+	MOVB [R12], RL5
+
+	EXTS #038h, #1
+	MOV R4, resptype
+	MOV R5, [R4]
+	OR R5, #0800h
+	MOV [R4], R5
+
+	SUB R13, R12
+	MOV R4, R13
+	RETS
+RamHandlerProc ENDP
+RamHandlerCode ENDS
+END
