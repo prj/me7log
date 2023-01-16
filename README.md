@@ -53,7 +53,7 @@ Once the handler information is set up, it is time to redirect the service table
 As soon as this is done, the next call is just the handler SID $BE without any arguments. If everything went well, the handler will reply with `7F BE 13`, otherwise the ECU will crash and there will be a timeout.
 
 A flag is checked during the execution of the handler, if it is not zero, then the initialization needs to be run.
-The new RAM service table has to be populated with valid data, apart from the first position. The handler loops over the original service table from the 2nd position and copies this data into the new service table. We still want the first SNS routine to always redirect to our handler, because the service distributor will not find our handler in the service table, and always call the SNS routine. The handler can then check the service ID, and if it is not ours just call the SNS routine, the near ptr of which we store in the first half of orgdistadr during initialization.
+The new RAM service table has to be populated with valid data, apart from the first position. The handler loops over the original service table from the 2nd position and copies this data into the new service table. We still want the first SNS routine to always redirect to our handler, because the service distributor will not find our handler in the service table, and always call the SNS routine. The handler can then check the service ID, and if it is not ours just call the SNS routine, which can be looked up from the address of the original table.
 
 ### Logging data
 The handler takes just a 2 byte argument, which is a pointer into the `#038h` segment. This address should contain an address array, which should be written there using the $3D service before calling the handler.
